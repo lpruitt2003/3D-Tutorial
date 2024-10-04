@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
+using Unity.VisualScripting;
 using UnityEditor.VersionControl;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -20,6 +21,11 @@ public class GameManager : MonoBehaviour
     int player1BallsRemaining = 7;
     int player2BallsRemaining = 7;
     bool isWaitingForBallMovementToStop;
+    bool isGameOver = false;
+    bool willSwapPlayers = false;
+    [SerializeField] float shotTimer = 3f;
+    private float currentTimer;
+    [SerializeField] float movementThreshold;
 
     [SerializeField] TextMeshProUGUI player1BallsText;
     [SerializeField] TextMeshProUGUI player2BallsText;
@@ -40,14 +46,41 @@ public class GameManager : MonoBehaviour
     {
         currentPlayer = CurrentPlayer.Player1;
         currentCamera = cueStickCamera;
+        currentTimer = shotTimer;
     }
 
     // Update is called once per frame
     void Update()
     {
-        if (isWaitingForBallMovementToStop)
+        if (isWaitingForBallMovementToStop && !isGameOver)
         {
-
+            currentTimer -= Time.deltaTime;
+            if (currentTimer > 0)
+            {
+                return;
+            }
+            bool allStopped = true;
+            foreach (GameObject ball in GameObject.FindGameObjectsWithTag("Ball")) 
+            {
+                if (ball.GetComponent<Rigidbody>().velocity.magnitude >= movementThreshold)
+                {
+                    allStopped = false;
+                    break;
+                }
+            }
+            if (allStopped)
+            {
+                isWaitingForBallMovementToStop = false;
+                if (willSwapPlayers)
+                {
+                    NextPlayerTurn();
+                }
+                else
+                {
+                    switchCameras();
+                }
+                currentTimer = shotTimer;
+            }
         }
     }
 
@@ -58,6 +91,7 @@ public class GameManager : MonoBehaviour
             cueStickCamera.enabled = false;
             overheadCamera.enabled = true;
             currentCamera = overheadCamera;
+            isWaitingForBallMovementToStop = true;
         }
         else
         {
@@ -91,7 +125,7 @@ public class GameManager : MonoBehaviour
                 return true;
             }
         }
-        NextPlayerTurn();
+        willSwapPlayers = true;
         return false;
     }
 
@@ -110,18 +144,6 @@ public class GameManager : MonoBehaviour
     void ScratchOnWinningShot(string player)
     {
         Lose(player + "scratched on their final shot and has lost!");
-    }
-
-    void NoMoreBalls(CurrentPlayer player)
-    {
-        if (player == CurrentPlayer.Player1)
-        {
-            isWinningShotForPlayer1 = true;
-        }
-        else
-        {
-            isWinningShotForPlayer2 = true;
-        }
     }
 
     bool CheckBall(Ball ball)
@@ -169,7 +191,7 @@ public class GameManager : MonoBehaviour
                 }
                 if (currentPlayer != CurrentPlayer.Player1)
                 {
-                    NextPlayerTurn();
+                    willSwapPlayers = true;
                 }
             }
             else
@@ -182,7 +204,7 @@ public class GameManager : MonoBehaviour
                 }
                 if (currentPlayer != CurrentPlayer.Player2)
                 {
-                    NextPlayerTurn();
+                    willSwapPlayers = true;
                 }
             }
         }
@@ -191,6 +213,7 @@ public class GameManager : MonoBehaviour
 
     void Lose (string message)
     {
+        isGameOver = true;
         messageText.gameObject.SetActive(true);
         messageText.text = message;
         restartbutton.SetActive(true);
@@ -198,6 +221,7 @@ public class GameManager : MonoBehaviour
 
     void Win(string players)
     {
+        isGameOver = true;
         messageText.gameObject.SetActive(true);
         messageText.text = players + " has won!";
         restartbutton.SetActive(true);
@@ -215,6 +239,8 @@ public class GameManager : MonoBehaviour
             currentPlayer = CurrentPlayer.Player1;
             currentTurnText.text = "Current turn: Player 1";
         }
+        willSwapPlayers = false;
+        switchCameras();
     }
 
     private void OnTriggerEnter(Collider other)
