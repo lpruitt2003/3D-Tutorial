@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using TMPro;
 using Unity.VisualScripting;
 using UnityEditor.VersionControl;
@@ -23,6 +24,7 @@ public class GameManager : MonoBehaviour
     bool isWaitingForBallMovementToStop;
     bool isGameOver = false;
     bool willSwapPlayers = false;
+    bool ballPocketed = false;
     [SerializeField] float shotTimer = 3f;
     private float currentTimer;
     [SerializeField] float movementThreshold;
@@ -39,6 +41,10 @@ public class GameManager : MonoBehaviour
     [SerializeField] GameObject restartbutton;
 
     [SerializeField] Transform headPosition;
+
+    private GameObject cueBall;
+    private bool isCueBallInHand = false;
+    private float savedMousePosition;
 
 
     // Start is called before the first frame update
@@ -60,7 +66,7 @@ public class GameManager : MonoBehaviour
                 return;
             }
             bool allStopped = true;
-            foreach (GameObject ball in GameObject.FindGameObjectsWithTag("Ball")) 
+            foreach (GameObject ball in GameObject.FindGameObjectsWithTag("Ball"))
             {
                 if (ball.GetComponent<Rigidbody>().velocity.magnitude >= movementThreshold)
                 {
@@ -70,16 +76,25 @@ public class GameManager : MonoBehaviour
             }
             if (allStopped)
             {
-                isWaitingForBallMovementToStop = false;
-                if (willSwapPlayers)
+                if (isCueBallInHand)
                 {
-                    NextPlayerTurn();
+                    PlaceBall();
                 }
                 else
                 {
-                    switchCameras();
+                    isWaitingForBallMovementToStop = false;
+                    if (willSwapPlayers || !ballPocketed)
+                    {
+                        NextPlayerTurn();
+                    }
+                    else
+                    {
+                        switchCameras();
+                    }
+                    currentTimer = shotTimer;
+                    ballPocketed = false;
+                    messageText.gameObject.SetActive(false);
                 }
-                currentTimer = shotTimer;
             }
         }
     }
@@ -153,7 +168,8 @@ public class GameManager : MonoBehaviour
             if (Scratch())
             {
                 return true;
-            } else
+            }
+            else
             {
                 return false;
             }
@@ -167,7 +183,7 @@ public class GameManager : MonoBehaviour
                     Win("Player 1");
                     return true;
                 }
-            } 
+            }
             else
             {
                 if (isWinningShotForPlayer2)
@@ -180,38 +196,52 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            // All other logic when not eight ball or cue ball
-            if (ball.IsBallRed())
+            if (ball.IsBallRed() && currentPlayer == CurrentPlayer.Player2)
             {
                 player1BallsRemaining--;
                 player1BallsText.text = "Player 1 Balls Remaining: " + player1BallsRemaining;
-                if (player1BallsRemaining == 0)
-                {
-                    isWinningShotForPlayer1 = true;
-                }
-                if (currentPlayer != CurrentPlayer.Player1)
-                {
-                    willSwapPlayers = true;
-                }
+                BallInHand();
             }
-            else
+            else if (!ball.IsBallRed() && currentPlayer == CurrentPlayer.Player1)
             {
                 player2BallsRemaining--;
                 player2BallsText.text = "Player 2 Balls Remaining: " + player2BallsRemaining;
-                if (player2BallsRemaining <= 0)
+                BallInHand();
+            }
+            else
+            {
+                if (ball.IsBallRed())
                 {
-                    isWinningShotForPlayer2 = true;
+                    player1BallsRemaining--;
+                    player1BallsText.text = "Player 1 Balls Remaining: " + player1BallsRemaining;
+                    if (player1BallsRemaining == 0)
+                    {
+                        isWinningShotForPlayer1 = true;
+                    }
+                    if (currentPlayer != CurrentPlayer.Player1)
+                    {
+                        willSwapPlayers = true;
+                    }
                 }
-                if (currentPlayer != CurrentPlayer.Player2)
+                else
                 {
-                    willSwapPlayers = true;
+                    player2BallsRemaining--;
+                    player2BallsText.text = "Player 2 Balls Remaining: " + player2BallsRemaining;
+                    if (player2BallsRemaining <= 0)
+                    {
+                        isWinningShotForPlayer2 = true;
+                    }
+                    if (currentPlayer != CurrentPlayer.Player2)
+                    {
+                        willSwapPlayers = true;
+                    }
                 }
             }
         }
         return true;
     }
 
-    void Lose (string message)
+    void Lose(string message)
     {
         isGameOver = true;
         messageText.gameObject.SetActive(true);
@@ -247,6 +277,7 @@ public class GameManager : MonoBehaviour
     {
         if (other.gameObject.tag == "Ball")
         {
+            ballPocketed = true;
             if (CheckBall(other.gameObject.GetComponent<Ball>()))
             {
                 Destroy(other.gameObject);
@@ -258,5 +289,56 @@ public class GameManager : MonoBehaviour
                 other.gameObject.GetComponent<Rigidbody>().angularVelocity = Vector3.zero;
             }
         }
+    }
+
+    void BallInHand()
+    {
+        messageText.gameObject.SetActive(true);
+        messageText.text = "Opponent's ball pocketed! Ball-in-hand.";
+
+        foreach (GameObject ball in GameObject.FindGameObjectsWithTag("Ball"))
+        {
+            if (ball.GetComponent<Ball>().IsCueBall())
+            {
+                cueBall = ball;
+                break;
+            }
+        }
+
+        if (cueBall != null)
+        {
+            isCueBallInHand = true;
+        }
+    }
+
+    void PlaceBall()
+    {
+        messageText.text = "Place Ball.";
+        if (isCueBallInHand && isWaitingForBallMovementToStop)
+        {
+            cueBall.GetComponent<Rigidbody>().isKinematic = true;
+            Ray ray = overheadCamera.ScreenPointToRay(Input.mousePosition);
+            RaycastHit hit;
+
+            if (Physics.Raycast(ray, out hit))
+            {
+                Vector3 newPosition = hit.point;
+                newPosition.y = 1.032262f;
+                cueBall.transform.position = newPosition;
+            }
+            if (Input.GetButtonUp("Fire1"))
+            {
+                cueBall.GetComponent<Rigidbody>().isKinematic = false;
+
+                // Ball placement done, reset the state
+                switchCameras();
+                isCueBallInHand = false;
+            }
+        }
+    }
+
+    public bool IsCueBallInHand()
+    {
+        return isCueBallInHand;
     }
 }
